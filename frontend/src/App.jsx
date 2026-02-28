@@ -1,8 +1,34 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
-const API_URL = import.meta.env.PROD 
-  ? 'https://global-relocation-intelligence-engine.onrender.com/api/analyze' 
+const API_URL = import.meta.env.PROD
+  ? 'https://global-relocation-intelligence-engine.onrender.com/api/analyze'
   : 'http://localhost:3001/api/analyze';
+
+// ─── Full country list for autocomplete ──────────────────────────────────────
+const COUNTRIES = [
+  "Afghanistan","Albania","Algeria","Andorra","Angola","Argentina","Armenia","Australia",
+  "Austria","Azerbaijan","Bahamas","Bahrain","Bangladesh","Belarus","Belgium","Belize",
+  "Benin","Bhutan","Bolivia","Bosnia and Herzegovina","Botswana","Brazil","Brunei",
+  "Bulgaria","Burkina Faso","Burundi","Cambodia","Cameroon","Canada","Cape Verde",
+  "Central African Republic","Chad","Chile","China","Colombia","Comoros","Congo",
+  "Costa Rica","Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti",
+  "Dominican Republic","Ecuador","Egypt","El Salvador","Estonia","Ethiopia","Fiji",
+  "Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Greece","Guatemala",
+  "Guinea","Haiti","Honduras","Hungary","Iceland","India","Indonesia","Iran","Iraq",
+  "Ireland","Israel","Italy","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kuwait",
+  "Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Lithuania",
+  "Luxembourg","Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Mauritania",
+  "Mauritius","Mexico","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique",
+  "Myanmar","Namibia","Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria",
+  "North Korea","North Macedonia","Norway","Oman","Pakistan","Panama","Papua New Guinea",
+  "Paraguay","Peru","Philippines","Poland","Portugal","Qatar","Romania","Russia","Rwanda",
+  "Saudi Arabia","Senegal","Serbia","Sierra Leone","Singapore","Slovakia","Slovenia",
+  "Somalia","South Africa","South Korea","South Sudan","Spain","Sri Lanka","Sudan",
+  "Sweden","Switzerland","Syria","Taiwan","Tajikistan","Tanzania","Thailand","Togo",
+  "Trinidad and Tobago","Tunisia","Turkey","Turkmenistan","Uganda","Ukraine",
+  "United Arab Emirates","United Kingdom","United States","Uruguay","Uzbekistan",
+  "Venezuela","Vietnam","Yemen","Zambia","Zimbabwe"
+];
 
 // ─── Utility Helpers ──────────────────────────────────────────────────────────
 
@@ -11,57 +37,44 @@ function scoreColor(score) {
   if (score >= 45) return 'bg-amber-400';
   return 'bg-red-500';
 }
-
 function scoreTextColor(score) {
   if (score >= 70) return 'text-emerald-600';
   if (score >= 45) return 'text-amber-600';
   return 'text-red-600';
 }
-
 function scoreBadgeColor(score) {
   if (score >= 70) return 'bg-emerald-100 text-emerald-800 border-emerald-300';
   if (score >= 45) return 'bg-amber-100 text-amber-800 border-amber-300';
   return 'bg-red-100 text-red-800 border-red-300';
 }
-
 function scoreLabel(score) {
   if (score >= 70) return 'Excellent';
   if (score >= 55) return 'Good';
   if (score >= 40) return 'Fair';
   return 'Poor';
 }
-
 function aqiInfo(aqi) {
-  if (aqi <= 50)  return { label: 'Good',       color: 'text-emerald-600' };
-  if (aqi <= 100) return { label: 'Moderate',   color: 'text-yellow-600'  };
-  if (aqi <= 150) return { label: 'USG',         color: 'text-orange-500'  };
-  if (aqi <= 200) return { label: 'Unhealthy',  color: 'text-red-500'     };
-  return           { label: 'Hazardous',  color: 'text-red-700'     };
+  if (aqi <= 50)  return { label: 'Good',      color: 'text-emerald-600' };
+  if (aqi <= 100) return { label: 'Moderate',  color: 'text-yellow-600'  };
+  if (aqi <= 150) return { label: 'USG',        color: 'text-orange-500'  };
+  if (aqi <= 200) return { label: 'Unhealthy', color: 'text-red-500'     };
+  return           { label: 'Hazardous', color: 'text-red-700'     };
 }
 
-// ─── Client-side Re-Scoring (mirrors backend math exactly) ───────────────────
-
+// ─── Client-side Re-Scoring ───────────────────────────────────────────────────
 function clientReScore(rawResults, riskTolerance, duration) {
   return rawResults.map(r => {
     let adjTravel = r.rawScores.travelRisk;
     let adjEnv    = r.rawScores.envScore;
     const adjHealth = r.rawScores.healthScore;
-
-    if (riskTolerance === 'Low') {
-      adjTravel = Math.max(0, 100 - (100 - adjTravel) * 1.5);
-    }
-    if (riskTolerance === 'High') {
-      adjEnv = Math.min(100, 100 - (100 - adjEnv) * 0.5);
-    }
-
+    if (riskTolerance === 'Low')  adjTravel = Math.max(0, 100 - (100 - adjTravel) * 1.5);
+    if (riskTolerance === 'High') adjEnv    = Math.min(100, 100 - (100 - adjEnv) * 0.5);
     const weights = duration === 'Long-term'
       ? { travel: 0.20, health: 0.60, env: 0.20 }
       : { travel: 0.35, health: 0.30, env: 0.35 };
-
     const finalScore = Math.round(
       (adjTravel * weights.travel + adjHealth * weights.health + adjEnv * weights.env) * 10
     ) / 10;
-
     return {
       ...r,
       scores: {
@@ -75,14 +88,13 @@ function clientReScore(rawResults, riskTolerance, duration) {
   }).sort((a, b) => b.scores.finalScore - a.scores.finalScore);
 }
 
-// ─── Radar / Spider Chart (pure SVG — no external library) ───────────────────
-
+// ─── Radar Chart ─────────────────────────────────────────────────────────────
 function RadarChart({ scores, size = 120 }) {
   const cx = size / 2, cy = size / 2, r = size * 0.36;
   const axes = [
-    { key: 'travelRisk',  label: '✈️',  sublabel: 'Travel'  },
-    { key: 'healthScore', label: '🏥', sublabel: 'Health'  },
-    { key: 'envScore',    label: '🌿', sublabel: 'Env'     },
+    { key: 'travelRisk',  label: '✈️', sublabel: 'Travel' },
+    { key: 'healthScore', label: '🏥', sublabel: 'Health' },
+    { key: 'envScore',    label: '🌿', sublabel: 'Env'    },
   ];
   const n = axes.length;
   const pt = (i, scale) => {
@@ -93,37 +105,101 @@ function RadarChart({ scores, size = 120 }) {
     .map((a, i) => pt(i, (scores[a.key] ?? 0) / 100))
     .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
     .join(' ') + ' Z';
-
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {[0.25, 0.5, 0.75, 1].map(level => (
-        <circle key={level} cx={cx} cy={cy} r={r * level}
-          fill="none" stroke="#e2e8f0" strokeWidth="0.8" strokeDasharray="3,2" />
+        <circle key={level} cx={cx} cy={cy} r={r * level} fill="none" stroke="#e2e8f0" strokeWidth="0.8" strokeDasharray="3,2" />
       ))}
-      {axes.map((a, i) => {
-        const end = pt(i, 1);
-        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#cbd5e1" strokeWidth="1" />;
-      })}
+      {axes.map((a, i) => { const end = pt(i, 1); return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#cbd5e1" strokeWidth="1" />; })}
       <path d={dataPath} fill="rgba(99,102,241,0.18)" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round" />
-      {axes.map((a, i) => {
-        const dp = pt(i, (scores[a.key] ?? 0) / 100);
-        return <circle key={i} cx={dp.x} cy={dp.y} r={3} fill="#6366f1" />;
-      })}
-      {axes.map((a, i) => {
-        const lp = pt(i, 1.3);
-        return (
-          <text key={i} x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="middle"
-            fontSize="9" fill="#64748b" fontWeight="600">
-            {a.label} {a.sublabel}
-          </text>
-        );
-      })}
+      {axes.map((a, i) => { const dp = pt(i, (scores[a.key] ?? 0) / 100); return <circle key={i} cx={dp.x} cy={dp.y} r={3} fill="#6366f1" />; })}
+      {axes.map((a, i) => { const lp = pt(i, 1.1); return (
+        <text key={i} x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="middle" fontSize="9" fill="#64748b" fontWeight="600">
+          {a.label} {a.sublabel}
+        </text>
+      ); })}
     </svg>
   );
 }
 
-// ─── Score Bar ────────────────────────────────────────────────────────────────
+// ─── Country Input with Autocomplete & Duplicate Detection ───────────────────
+function CountryInput({ value, index, allCountries, onChange, onRemove, canRemove }) {
+  const [focused, setFocused] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const wrapperRef = useRef(null);
 
+  // Check duplicate: same name used in another slot
+  const isDuplicate = value.trim() !== '' &&
+    allCountries.some((c, i) => i !== index && c.trim().toLowerCase() === value.trim().toLowerCase());
+
+  // Autocomplete suggestions
+  const suggestions = focused && value.trim().length > 0
+    ? COUNTRIES.filter(c => c.toLowerCase().startsWith(value.trim().toLowerCase())).slice(0, 8)
+    : [];
+
+  const selectSuggestion = (name) => {
+    onChange(index, name);
+    setFocused(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+    if (e.key === 'Enter')     { e.preventDefault(); selectSuggestion(suggestions[highlightIdx]); }
+    if (e.key === 'Escape')    { setFocused(false); }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative flex gap-2">
+      <div className="flex-1 relative">
+        <input
+          type="text"
+          value={value}
+          onChange={e => { onChange(index, e.target.value); setHighlightIdx(0); }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          onKeyDown={handleKeyDown}
+          placeholder={`Country ${index + 1}`}
+          className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all
+            ${isDuplicate
+              ? 'bg-red-500/10 border-red-500/60 text-red-300 focus:ring-red-500 placeholder-red-400'
+              : 'bg-white/10 border-white/20 text-white focus:ring-indigo-500 placeholder-slate-500'
+            }`}
+        />
+        {/* Duplicate warning */}
+        {isDuplicate && (
+          <div className="absolute -bottom-5 left-0 text-xs text-red-400 font-semibold flex items-center gap-1">
+            ⚠️ Already added
+          </div>
+        )}
+        {/* Autocomplete dropdown */}
+        {focused && suggestions.length > 0 && !isDuplicate && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+            {suggestions.map((s, i) => (
+              <div
+                key={s}
+                onMouseDown={() => selectSuggestion(s)}
+                className={`px-4 py-2 text-sm cursor-pointer transition-colors
+                  ${i === highlightIdx ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-white/10'}`}
+              >
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {canRemove && (
+        <button onClick={() => onRemove(index)}
+          className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition font-bold self-start">
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Score Bar ────────────────────────────────────────────────────────────────
 function ScoreBar({ label, value, icon }) {
   const color   = scoreColor(value ?? 0);
   const tcolor  = scoreTextColor(value ?? 0);
@@ -135,29 +211,26 @@ function ScoreBar({ label, value, icon }) {
         <span className={`text-xs font-bold ${tcolor}`}>{display}</span>
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-        <div className={`${color} h-2.5 rounded-full transition-all duration-700`}
-          style={{ width: `${Math.min(100, value ?? 0)}%` }} />
+        <div className={`${color} h-2.5 rounded-full transition-all duration-700`} style={{ width: `${Math.min(100, value ?? 0)}%` }} />
       </div>
     </div>
   );
 }
 
 // ─── Badge ────────────────────────────────────────────────────────────────────
-
 function Badge({ label, variant = 'gray' }) {
   const map = { gray: 'bg-gray-100 text-gray-600', blue: 'bg-blue-100 text-blue-700' };
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[variant] ?? map.gray}`}>{label}</span>;
 }
 
-// ─── Weight Breakdown (expandable) ───────────────────────────────────────────
-
+// ─── Weight Breakdown ─────────────────────────────────────────────────────────
 function WeightBreakdown({ result }) {
   const [open, setOpen] = useState(false);
   const { scores, weights } = result;
   const rows = [
-    { icon: '✈️', label: 'Travel Risk Safety',    score: scores.travelRisk,  weight: weights.travel  },
-    { icon: '🏥', label: 'Health Infrastructure', score: scores.healthScore, weight: weights.health  },
-    { icon: '🌿', label: 'Env Stability',          score: scores.envScore,    weight: weights.env     },
+    { icon: '✈️', label: 'Travel Risk Safety',    score: scores.travelRisk,  weight: weights.travel },
+    { icon: '🏥', label: 'Health Infrastructure', score: scores.healthScore, weight: weights.health },
+    { icon: '🌿', label: 'Env Stability',          score: scores.envScore,    weight: weights.env    },
   ];
   return (
     <div className="mt-3">
@@ -168,17 +241,15 @@ function WeightBreakdown({ result }) {
       </button>
       {open && (
         <div className="mt-2 bg-gray-50 rounded-xl border border-gray-200 p-3">
-          <p className="text-xs text-gray-400 mb-2">
-            Final Score = Σ (component × weight). Weights shift dynamically based on Risk Tolerance & Duration.
-          </p>
+          <p className="text-xs text-gray-400 mb-2">Final Score = Σ (component × weight). Weights shift dynamically based on Risk Tolerance & Duration.</p>
           {rows.map(c => (
             <div key={c.label} className="flex items-center gap-2 text-xs mb-1.5">
               <span className="w-5">{c.icon}</span>
               <span className="w-36 text-gray-700 font-medium">{c.label}</span>
               <span className={`w-10 font-bold ${scoreTextColor(c.score)}`}>{c.score.toFixed(1)}</span>
-              <span className="text-gray-400 text-xs">×</span>
+              <span className="text-gray-400">×</span>
               <span className="w-8 text-indigo-600 font-bold">{(c.weight * 100).toFixed(0)}%</span>
-              <span className="text-gray-400 text-xs">=</span>
+              <span className="text-gray-400">=</span>
               <span className="font-bold text-gray-800">{(c.score * c.weight).toFixed(2)} pts</span>
             </div>
           ))}
@@ -194,25 +265,19 @@ function WeightBreakdown({ result }) {
 }
 
 // ─── Country Card ─────────────────────────────────────────────────────────────
-
 function CountryCard({ result, rank }) {
   const { scores } = result;
   const rankRing = ['ring-yellow-400 bg-yellow-50', 'ring-gray-300 bg-gray-50', 'ring-orange-300 bg-orange-50'];
   const ringClass = rankRing[rank - 1] || 'ring-gray-200 bg-white';
   const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-
   return (
     <div className={`rounded-2xl ring-2 ${ringClass} p-5 shadow-sm hover:shadow-lg transition-all duration-300`}>
-
-      {/* Header row */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-2xl">{medal}</span>
             <h2 className="text-xl font-bold text-gray-900">{result.countryName}</h2>
-            {result.fromCache && (
-              <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">⚡ cached</span>
-            )}
+            {result.fromCache && <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">⚡ cached</span>}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {result.capital  !== 'N/A' && <Badge label={`🏛 ${result.capital}`}  variant="blue" />}
@@ -220,8 +285,6 @@ function CountryCard({ result, rank }) {
             {result.population && <Badge label={`👥 ${(result.population / 1e6).toFixed(1)}M`} />}
           </div>
         </div>
-
-        {/* Radar + Badge */}
         <div className="flex items-center gap-2 ml-3 shrink-0">
           <RadarChart scores={scores} size={110} />
           <div className={`flex flex-col items-center justify-center rounded-2xl border-2 px-3 py-2 min-w-16 ${scoreBadgeColor(scores.finalScore)}`}>
@@ -230,15 +293,11 @@ function CountryCard({ result, rank }) {
           </div>
         </div>
       </div>
-
-      {/* Score bars */}
       <div className="mb-3">
-        <ScoreBar label="Travel Risk Safety"    value={scores.travelRisk}  icon="✈️" />
-        <ScoreBar label="Health Infrastructure" value={scores.healthScore} icon="🏥" />
-        <ScoreBar label="Environmental Stability" value={scores.envScore}  icon="🌿" />
+        <ScoreBar label="Travel Risk Safety"      value={scores.travelRisk}  icon="✈️" />
+        <ScoreBar label="Health Infrastructure"   value={scores.healthScore} icon="🏥" />
+        <ScoreBar label="Environmental Stability" value={scores.envScore}    icon="🌿" />
       </div>
-
-      {/* Data chips */}
       <div className="grid grid-cols-3 gap-2 mb-3 text-sm">
         {result.temperature != null && (
           <div className="bg-white rounded-lg p-2 border border-gray-100 text-center">
@@ -279,18 +338,12 @@ function CountryCard({ result, rank }) {
           </div>
         )}
       </div>
-
-      {/* Reasoning */}
       <div className="bg-indigo-50 rounded-xl p-3 mb-2 border border-indigo-100">
         <p className="text-xs text-indigo-700 leading-relaxed">
           <span className="font-semibold">🧠 Analysis: </span>{result.reasoningSummary}
         </p>
       </div>
-
-      {/* Expandable weight breakdown */}
       <WeightBreakdown result={result} />
-
-      {/* Warnings */}
       {result.warnings?.length > 0 && (
         <div className="space-y-1 mt-2">
           {result.warnings.map((w, i) => (
@@ -304,22 +357,20 @@ function CountryCard({ result, rank }) {
   );
 }
 
-// ─── Side-by-Side Comparison Table ───────────────────────────────────────────
-
+// ─── Comparison Table ─────────────────────────────────────────────────────────
 function ComparisonTable({ results }) {
   const [open, setOpen] = useState(false);
   const metrics = [
-    { label: '🎯 Final Score',       get: r => r.scores.finalScore        },
-    { label: '✈️ Travel Risk',       get: r => r.scores.travelRisk        },
-    { label: '🏥 Health Score',      get: r => r.scores.healthScore       },
-    { label: '🌿 Env Score',         get: r => r.scores.envScore          },
-    { label: '🌡 Temp (°C)',         get: r => r.temperature              },
-    { label: '💨 AQI',              get: r => r.aqi                      },
-    { label: '❤️ Life Exp (yrs)',   get: r => r.lifeExpectancy            },
-    { label: '🏥 Health Exp (%GDP)',  get: r => r.healthcareExpenditure    },
-    { label: '🚨 Advisory',         get: r => r.advisoryScore            },
+    { label: '🎯 Final Score',        get: r => r.scores.finalScore        },
+    { label: '✈️ Travel Risk',        get: r => r.scores.travelRisk        },
+    { label: '🏥 Health Score',       get: r => r.scores.healthScore       },
+    { label: '🌿 Env Score',          get: r => r.scores.envScore          },
+    { label: '🌡 Temp (°C)',          get: r => r.temperature              },
+    { label: '💨 AQI',               get: r => r.aqi                      },
+    { label: '❤️ Life Exp (yrs)',    get: r => r.lifeExpectancy            },
+    { label: '🏥 Health Exp (%GDP)', get: r => r.healthcareExpenditure     },
+    { label: '🚨 Advisory',          get: r => r.advisoryScore            },
   ];
-
   return (
     <div className="mb-6">
       <button onClick={() => setOpen(o => !o)}
@@ -367,8 +418,7 @@ function ComparisonTable({ results }) {
   );
 }
 
-// ─── Export JSON Button ───────────────────────────────────────────────────────
-
+// ─── Export Button ────────────────────────────────────────────────────────────
 function ExportButton({ results, meta, riskTolerance, duration }) {
   const handle = () => {
     const payload = {
@@ -376,19 +426,15 @@ function ExportButton({ results, meta, riskTolerance, duration }) {
       config: { riskTolerance, duration },
       meta,
       results: results.map((r, i) => ({
-        rank: i + 1,
-        countryName: r.countryName,
-        capital: r.capital,
-        scores: r.scores,
-        weights: r.weights,
+        rank: i + 1, countryName: r.countryName, capital: r.capital,
+        scores: r.scores, weights: r.weights,
         rawData: {
           temperature: r.temperature, aqi: r.aqi,
           lifeExpectancy: r.lifeExpectancy, healthcareExpenditure: r.healthcareExpenditure,
           advisoryScore: r.advisoryScore, advisoryMessage: r.advisoryMessage,
           population: r.population, currency: r.currency,
         },
-        reasoningSummary: r.reasoningSummary,
-        warnings: r.warnings,
+        reasoningSummary: r.reasoningSummary, warnings: r.warnings,
       })),
     };
     const a = document.createElement('a');
@@ -405,19 +451,18 @@ function ExportButton({ results, meta, riskTolerance, duration }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-
 export default function App() {
-  const [countries,     setCountries]     = useState(['Canada', 'Japan', 'Brazil']);
-  const [riskTolerance, setRiskTolerance] = useState('Moderate');
-  const [duration,      setDuration]      = useState('Short-term');
-  const [loading,       setLoading]       = useState(false);
-  const [results,       setResults]       = useState(null);
-  const [rawResults,    setRawResults]    = useState(null);
-  const [meta,          setMeta]          = useState(null);
-  const [error,         setError]         = useState(null);
-  const [responseTime,  setResponseTime]  = useState(null);
-  const [activeRisk,    setActiveRisk]    = useState('Moderate');
-  const [activeDuration,setActiveDuration]= useState('Short-term');
+  const [countries,      setCountries]      = useState(['Canada', 'Japan', 'Brazil']);
+  const [riskTolerance,  setRiskTolerance]  = useState('Moderate');
+  const [duration,       setDuration]       = useState('Short-term');
+  const [loading,        setLoading]        = useState(false);
+  const [results,        setResults]        = useState(null);
+  const [rawResults,     setRawResults]     = useState(null);
+  const [meta,           setMeta]           = useState(null);
+  const [error,          setError]          = useState(null);
+  const [responseTime,   setResponseTime]   = useState(null);
+  const [activeRisk,     setActiveRisk]     = useState('Moderate');
+  const [activeDuration, setActiveDuration] = useState('Short-term');
 
   const addCountry    = () => setCountries(p => [...p, '']);
   const removeCountry = i  => setCountries(p => p.filter((_, idx) => idx !== i));
@@ -425,34 +470,34 @@ export default function App() {
 
   const filledCount = countries.map(c => c.trim()).filter(Boolean).length;
 
+  // Check if any duplicate exists
+  const hasDuplicates = countries.some((c, i) =>
+    c.trim() !== '' && countries.some((c2, j) => j !== i && c2.trim().toLowerCase() === c.trim().toLowerCase())
+  );
+
   const handleSubmit = useCallback(async () => {
-    const valid = countries.map(c => c.trim()).filter(Boolean);
-    if (valid.length < 3) { setError('Please enter at least 3 countries to analyze.'); return; }
-
-    setLoading(true); setError(null); setResults(null); setRawResults(null);
-    setMeta(null); setResponseTime(null);
+    const trimmed = countries.map(c => c.trim()).filter(Boolean);
+    const unique  = [...new Map(trimmed.map(c => [c.toLowerCase(), c])).values()];
+    if (unique.length < 3) {
+      setError('Please enter at least 3 different countries.');
+      return;
+    }
+    setLoading(true); setError(null); setResults(null);
+    setRawResults(null); setMeta(null); setResponseTime(null);
     const t0 = Date.now();
-
     try {
       const res  = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ countries: valid, riskTolerance, duration }),
+        body: JSON.stringify({ countries: unique, riskTolerance, duration }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error');
-
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
-      // Attach rawScores so live re-score works without re-fetching
+      const elapsed  = ((Date.now() - t0) / 1000).toFixed(2);
       const enriched = data.results.map(r => ({ ...r, rawScores: { ...r.scores } }));
       const sorted   = [...enriched].sort((a, b) => b.scores.finalScore - a.scores.finalScore);
-
-      setResults(sorted);
-      setRawResults(enriched);
-      setMeta(data.meta);
-      setResponseTime(elapsed);
-      setActiveRisk(riskTolerance);
-      setActiveDuration(duration);
+      setResults(sorted); setRawResults(enriched); setMeta(data.meta);
+      setResponseTime(elapsed); setActiveRisk(riskTolerance); setActiveDuration(duration);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -460,18 +505,18 @@ export default function App() {
     }
   }, [countries, riskTolerance, duration]);
 
-  // Instant re-rank without re-fetching API
   const handleReScore = (newRisk, newDuration) => {
     if (!rawResults) return;
     setResults(clientReScore(rawResults, newRisk, newDuration));
-    setActiveRisk(newRisk);
-    setActiveDuration(newDuration);
+    setActiveRisk(newRisk); setActiveDuration(newDuration);
   };
+
+  const canSubmit = filledCount >= 3 && !hasDuplicates && !loading;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-gray-100">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="text-center pt-12 pb-8 px-4">
         <div className="inline-flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/30 rounded-full px-4 py-1.5 mb-4 text-indigo-300 text-sm">
           🌐 Real-Time APIs • Min-Max Normalization • Dynamic Weighted Scoring
@@ -484,41 +529,44 @@ export default function App() {
         </p>
       </div>
 
-      {/* ── Form ── */}
+      {/* Form */}
       <div className="max-w-3xl mx-auto px-4 mb-10">
         <div className="bg-white/5 backdrop-blur rounded-3xl border border-white/10 p-6 sm:p-8 shadow-2xl">
           <h2 className="text-lg font-semibold text-white mb-5">Configure Your Analysis</h2>
 
-          {/* Countries */}
-          <div className="mb-5">
+          <div className="mb-6">
             <label className="text-sm font-medium text-slate-400 mb-2 block">
               Countries to Compare
               <span className="ml-2 text-xs text-slate-500">(minimum 3)</span>
             </label>
-            <div className="space-y-2">
+            <div className="space-y-4">
               {countries.map((c, i) => (
-                <div key={i} className="flex gap-2">
-                  <input type="text" value={c} onChange={e => updateCountry(i, e.target.value)}
-                    placeholder={`Country ${i + 1}`}
-                    className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" />
-                  {countries.length > 3 && (
-                    <button onClick={() => removeCountry(i)}
-                      className="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition font-bold">✕</button>
-                  )}
-                </div>
+                <CountryInput
+                  key={i}
+                  index={i}
+                  value={c}
+                  allCountries={countries}
+                  onChange={updateCountry}
+                  onRemove={removeCountry}
+                  canRemove={countries.length > 3}
+                />
               ))}
             </div>
-            <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center justify-between mt-4">
               <button onClick={addCountry} className="text-sm text-indigo-400 hover:text-indigo-300 transition">
                 + Add country
               </button>
-              <span className={`text-xs font-semibold ${filledCount >= 3 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {filledCount >= 3 ? '✓' : '⚠️'} {filledCount}/3 minimum filled
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                <span className={`text-xs font-semibold ${filledCount >= 3 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {filledCount >= 3 ? '✓' : '⚠️'} {filledCount}/3 minimum filled
+                </span>
+                {hasDuplicates && (
+                  <span className="text-xs text-red-400 font-semibold">⚠️ Remove duplicate countries first</span>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Risk + Duration */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div>
               <label className="text-sm font-medium text-slate-400 mb-2 block">Risk Tolerance</label>
@@ -539,8 +587,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Submit */}
-          <button onClick={handleSubmit} disabled={filledCount < 3 || loading}
+          <button onClick={handleSubmit} disabled={!canSubmit}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-xl transition-all text-base shadow-lg shadow-indigo-600/30">
             {loading
               ? <span className="flex items-center justify-center gap-2">
@@ -561,11 +608,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Results ── */}
+      {/* Results */}
       {results && (
         <div className="max-w-6xl mx-auto px-4 pb-16">
-
-          {/* Stats bar */}
           <div className="flex flex-wrap gap-3 justify-center mb-6">
             <span className="bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-sm text-slate-300">
               📊 {results.length} countries ranked
@@ -588,7 +633,7 @@ export default function App() {
             )}
           </div>
 
-          {/* ── Live Re-Score Panel ── */}
+          {/* Live Re-Score */}
           <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-4 mb-6">
             <p className="text-xs text-indigo-300 font-semibold uppercase tracking-wide mb-3">
               ⚡ Live Re-Score — instantly re-rank without re-fetching data
@@ -612,27 +657,23 @@ export default function App() {
                 </select>
               </div>
               <p className="text-xs text-slate-500 max-w-sm">
-                Rankings update instantly — demonstrates the dynamic weighting logic live. No extra API calls made.
+                Rankings update instantly — demonstrates dynamic weighting logic live. No extra API calls made.
               </p>
             </div>
           </div>
 
-          {/* Failed */}
           {meta?.errors?.map(e => (
             <div key={e.country} className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm text-red-400">
               ❌ <strong>{e.country}</strong>: {e.error}
             </div>
           ))}
 
-          {/* Comparison Table */}
           <ComparisonTable results={results} />
 
-          {/* Export */}
           <div className="flex justify-end mb-5">
             <ExportButton results={results} meta={meta} riskTolerance={activeRisk} duration={activeDuration} />
           </div>
 
-          {/* Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {results.map((r, i) => (
               <CountryCard key={r.countryName} result={r} rank={i + 1} />
@@ -641,7 +682,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Loading Overlay ── */}
+      {/* Loading Overlay */}
       {loading && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-3xl p-10 flex flex-col items-center gap-4 shadow-2xl border border-white/10 max-w-sm w-full mx-4">

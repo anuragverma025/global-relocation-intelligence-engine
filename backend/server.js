@@ -152,7 +152,7 @@ app.post('/api/analyze', async (req, res) => {
   const { countries, riskTolerance, duration } = req.body;
 
   if (!Array.isArray(countries) || countries.length < 3) {
-  return res.status(400).json({ error: 'Provide at least 3 countries.' });
+    return res.status(400).json({ error: 'Provide at least 3 countries.' });
   }
   if (!['Low', 'Moderate', 'High'].includes(riskTolerance)) {
     return res.status(400).json({ error: 'riskTolerance must be Low, Moderate, or High.' });
@@ -161,12 +161,19 @@ app.post('/api/analyze', async (req, res) => {
     return res.status(400).json({ error: 'duration must be Short-term or Long-term.' });
   }
 
+  // ── Remove duplicate country names (case-insensitive) ──
+  // Safety net in case frontend sends duplicates
+  const uniqueCountries = [...new Map(
+    countries.map(c => [c.trim().toLowerCase(), c.trim()])
+  ).values()];
+  console.log(`[INFO] Countries after dedup: ${uniqueCountries.join(', ')}`);
+
   let cacheHits = 0;
   let cacheMisses = 0;
   const errors = [];
 
   // Determine which countries need fetching
-  const fetchPromises = countries.map(async (name) => {
+  const fetchPromises = uniqueCountries.map(async (name) => {
     const key = `country:${name.trim().toLowerCase()}`;
     const cached = cache.get(key);
     if (cached) {

@@ -15,6 +15,17 @@ normalization and dynamic weighted algorithms.
 - `cd frontend && npm install && npm run dev`
 - Open http://localhost:5173
 
+## 📸 Screenshots
+
+### 🔧 Configure Your Analysis
+![Form](./screenshot-form.png)
+
+### 🏆 Ranked Results with Radar Charts
+![Results](./screenshot-results.png)
+
+### 📊 Comparison Table & Score Breakdown
+![Breakdown](./screenshot-breakdown.png)
+
 ## Project Structure
 
 ```
