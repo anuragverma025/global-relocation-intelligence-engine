@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 
-const API_URL = 'http://localhost:3001/api/analyze';
+const API_URL = import.meta.env.PROD 
+  ? 'https://global-relocation-intelligence-engine.onrender.com/api/analyze' 
+  : 'http://localhost:3001/api/analyze';
 
 // ─── Utility Helpers ──────────────────────────────────────────────────────────
 
