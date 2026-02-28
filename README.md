@@ -1,4 +1,19 @@
-# Global Relocation & Travel Decision Intelligence Engine
+# 🌍 Global Relocation & Travel Decision Intelligence Engine
+
+> Built for GDG Hackathon 2025
+
+## 🔗 Live Demo
+👉 **[Click here to open the live app](https://global-relocation-intelligence-engine-96a3.onrender.com)**
+
+## What it does
+Enter any 3+ countries and instantly get a ranked suitability report 
+based on real-time data from 4 public APIs — scored using Min-Max 
+normalization and dynamic weighted algorithms.
+
+## Run Locally
+- `cd backend && npm install && npm run dev`
+- `cd frontend && npm install && npm run dev`
+- Open http://localhost:5173
 
 ## Project Structure
 
