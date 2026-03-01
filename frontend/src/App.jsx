@@ -706,6 +706,31 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Footer */}
+      <footer className="border-t border-white/10 bg-slate-900/80 mt-10 py-8 px-4">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-center sm:text-left">
+            <div className="text-white font-bold text-lg">
+              🌍 Global Relocation & Travel Intelligence
+            </div>
+            <div className="text-slate-400 text-sm mt-1">
+              Real-time data from 4 public APIs • Min-Max Normalization • Dynamic Weighted Scoring
+            </div>
+          </div>
+          <div className="flex flex-col items-center sm:items-end gap-1 text-xs text-slate-500">
+            <div className="flex gap-3">
+              <span className="bg-white/5 border border-white/10 rounded-full px-3 py-1">REST Countries</span>
+              <span className="bg-white/5 border border-white/10 rounded-full px-3 py-1">World Bank</span>
+            </div>
+            <div className="flex gap-3 mt-1">
+              <span className="bg-white/5 border border-white/10 rounded-full px-3 py-1">Open-Meteo</span>
+              <span className="bg-white/5 border border-white/10 rounded-full px-3 py-1">Travel Advisory</span>
+            </div>
+            <div className="mt-2 text-slate-600">Built for GDG & Velocity Hackathon 2025</div>
+          </div>
+        </div>
+      </footer>
+
     </div>
   );
-}
+};

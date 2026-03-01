@@ -1,6 +1,6 @@
 # 🌍 Global Relocation & Travel Decision Intelligence Engine
 
-> Built for GDG Hackathon 2025
+> Built for GDG & Velocity Hackathon 2025
 
 ## 🔗 Live Demo
 👉 **[Click here to open the live app](https://global-relocation-intelligence-engine-96a3.onrender.com)**
